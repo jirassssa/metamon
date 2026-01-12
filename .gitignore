@@ -1,0 +1,96 @@
+# Environment variables - CRITICAL: Never commit these!
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local data
+data/
+*.db
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Secrets - CRITICAL!
+*.pem
+*.key
+*.cert
+secrets/
+credentials/
+*.credentials
+*.secret
+
+# API Keys patterns
+*_api_key*
+*_secret*
+*_token*
+*_password*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build artifacts
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.manifest
+*.spec
+
+# ChromaDB local data
+chroma_data/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Alembic
+alembic/versions/*.pyc

@@ -17,7 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getLiveLeaderboard, type DiscoveredTrader } from "@/lib/api";
+import { getLiveLeaderboard, getKalshiMarkets, type DiscoveredTrader, type KalshiMarket } from "@/lib/api";
 import { formatAddress, formatCurrency, getPnLColor } from "@/lib/utils";
 
 const features = [
@@ -47,12 +47,6 @@ const features = [
   },
 ];
 
-const stats = [
-  { value: "$2.5M+", label: "Total Volume Copied" },
-  { value: "1,200+", label: "Active Copiers" },
-  { value: "89%", label: "Avg Win Rate" },
-  { value: "156%", label: "Top Trader ROI" },
-];
 
 function TopTraderRow({
   trader,
@@ -138,7 +132,19 @@ export default function HomePage() {
     staleTime: 60000, // 1 minute
   });
 
+  // Fetch Kalshi trending markets (fetch more to find active ones)
+  const { data: kalshiData, isLoading: loadingKalshi } = useQuery({
+    queryKey: ["homepage-kalshi"],
+    queryFn: () => getKalshiMarkets(500, "all"),
+    staleTime: 60000,
+  });
+
   const topTraders = leaderboardData?.traders || [];
+  // Show markets with actual trading activity (last_price > 0 means trades happened)
+  const trendingKalshiMarkets = kalshiData?.markets
+    ?.filter((m) => parseFloat(m.last_price_dollars || "0") > 0)
+    .sort((a, b) => (b.volume || 0) - (a.volume || 0))
+    .slice(0, 6) || [];
 
   return (
     <div className="relative">
@@ -176,29 +182,6 @@ export default function HomePage() {
             </div>
           </motion.div>
 
-          {/* Stats */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-16"
-          >
-            {stats.map((stat, index) => (
-              <Card
-                key={index}
-                className="bg-card/50 backdrop-blur border-border/50"
-              >
-                <CardContent className="p-6 text-center">
-                  <div className="text-2xl md:text-3xl font-bold text-primary">
-                    {stat.value}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {stat.label}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </motion.div>
         </div>
       </section>
 
@@ -282,6 +265,110 @@ export default function HomePage() {
                 </Link>
               </Button>
             </motion.div>
+          )}
+        </div>
+      </section>
+
+      {/* Kalshi Markets Section */}
+      <section className="py-16">
+        <div className="container">
+          <motion.div
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true }}
+            className="flex items-center justify-between mb-8"
+          >
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <h2 className="text-2xl md:text-3xl font-bold">
+                  Kalshi Markets
+                </h2>
+                <Badge variant="secondary">CFTC Regulated</Badge>
+              </div>
+              <p className="text-muted-foreground">
+                Trade on real-world events with a regulated exchange
+              </p>
+            </div>
+            <Button variant="outline" asChild>
+              <Link href="/kalshi">
+                Explore Kalshi
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </motion.div>
+
+          {/* Loading State */}
+          {loadingKalshi && (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-32 bg-muted animate-pulse rounded-lg"
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Markets Grid */}
+          {!loadingKalshi && trendingKalshiMarkets.length > 0 && (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {trendingKalshiMarkets.map((market, index) => (
+                <motion.div
+                  key={market.ticker}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <a
+                    href={`https://kalshi.com/markets/${market.ticker}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Card className="hover:border-primary/50 transition-all duration-200 cursor-pointer h-full">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <Badge variant="secondary" className="text-xs">
+                            {market.ticker.includes("NBA") || market.ticker.includes("NFL") ? "Sports" :
+                             market.ticker.includes("ECON") || market.ticker.includes("FED") ? "Economics" : "General"}
+                          </Badge>
+                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <p className="font-medium text-sm line-clamp-2 mb-3">{market.title}</p>
+                        <div className="flex items-center justify-between">
+                          <div className="flex gap-3">
+                            <div className="text-center">
+                              <div className="text-xs text-green-500 font-medium">YES</div>
+                              <div className="text-sm font-bold text-green-500">
+                                {(parseFloat(market.yes_bid_dollars || "0") * 100).toFixed(0)}c
+                              </div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-xs text-red-500 font-medium">NO</div>
+                              <div className="text-sm font-bold text-red-500">
+                                {(parseFloat(market.no_bid_dollars || "0") * 100).toFixed(0)}c
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            <Activity className="h-3 w-3 inline mr-1" />
+                            {(market.volume || 0).toLocaleString()} vol
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </a>
+                </motion.div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!loadingKalshi && trendingKalshiMarkets.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground">
+                Unable to load Kalshi markets. Please try again later.
+              </p>
+            </div>
           )}
         </div>
       </section>

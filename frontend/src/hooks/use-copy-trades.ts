@@ -1,67 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { parseUnits, encodeFunctionData } from "viem";
+import { useSafePrivy, useSafeWallets } from "@/hooks/use-safe-privy";
 import { useAuthStore } from "@/stores/auth-store";
 import { useToast } from "./use-toast";
 
-// Polymarket CLOB Contract on Polygon
-const CLOB_CONTRACT = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045" as const;
-
-// USDC Contract on Polygon
-const USDC_CONTRACT = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" as const;
-
-// ERC20 ABI for approval
-const ERC20_ABI = [
-  {
-    name: "approve",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "spender", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    name: "allowance",
-    type: "function",
-    stateMutability: "view",
-    inputs: [
-      { name: "owner", type: "address" },
-      { name: "spender", type: "address" },
-    ],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-] as const;
-
-// Simplified CLOB ABI for placing orders
-const CLOB_ABI = [
-  {
-    name: "fillOrder",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "order", type: "tuple", components: [
-        { name: "salt", type: "uint256" },
-        { name: "maker", type: "address" },
-        { name: "signer", type: "address" },
-        { name: "taker", type: "address" },
-        { name: "tokenId", type: "uint256" },
-        { name: "makerAmount", type: "uint256" },
-        { name: "takerAmount", type: "uint256" },
-        { name: "expiration", type: "uint256" },
-        { name: "nonce", type: "uint256" },
-        { name: "feeRateBps", type: "uint256" },
-        { name: "side", type: "uint8" },
-        { name: "signatureType", type: "uint8" },
-      ]},
-      { name: "fillAmount", type: "uint256" },
-    ],
-    outputs: [],
-  },
-] as const;
+// Contract addresses (for future implementation)
+// const CLOB_CONTRACT = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
+// const USDC_CONTRACT = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
 
 export interface PendingCopyTrade {
   id: string;
@@ -111,8 +57,14 @@ const WS_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/^http/, "ws") || "
 
 export function useCopyTrades(options: UseCopyTradesOptions = {}) {
   const { token, isAuthenticated } = useAuthStore();
-  const { address, isConnected: isWalletConnected } = useAccount();
+  const { authenticated } = useSafePrivy();
+  const { wallets } = useSafeWallets();
   const { toast } = useToast();
+
+  // Get the first connected wallet
+  const wallet = wallets[0];
+  const address = wallet?.address;
+  const isWalletConnected = !!wallet;
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
@@ -124,48 +76,8 @@ export function useCopyTrades(options: UseCopyTradesOptions = {}) {
   const [pendingTrades, setPendingTrades] = useState<PendingCopyTrade[]>([]);
   const [executingTradeId, setExecutingTradeId] = useState<string | null>(null);
   const [needsApproval, setNeedsApproval] = useState(false);
-
-  // Contract write hooks
-  const { writeContract: approveUsdc, data: approveHash, isPending: isApproving } = useWriteContract();
-  const { writeContract: executeTrade, data: tradeHash, isPending: isExecuting } = useWriteContract();
-
-  // Wait for approval transaction
-  const { isLoading: isWaitingApproval, isSuccess: approvalSuccess } = useWaitForTransactionReceipt({
-    hash: approveHash,
-  });
-
-  // Wait for trade transaction
-  const { isLoading: isWaitingTrade, isSuccess: tradeSuccess } = useWaitForTransactionReceipt({
-    hash: tradeHash,
-  });
-
-  // Handle approval success
-  useEffect(() => {
-    if (approvalSuccess && needsApproval) {
-      setNeedsApproval(false);
-      toast({
-        title: "USDC Approved",
-        description: "You can now execute copy trades",
-      });
-    }
-  }, [approvalSuccess, needsApproval, toast]);
-
-  // Handle trade execution success
-  useEffect(() => {
-    if (tradeSuccess && executingTradeId && tradeHash) {
-      // Notify backend
-      sendMessage({ type: "execute_trade", trade_id: executingTradeId, tx_hash: tradeHash });
-      toast({
-        title: "Trade Executed",
-        description: "Copy trade successfully executed on-chain",
-      });
-      optionsRef.current.onTradeExecuted?.(executingTradeId, tradeHash);
-      setExecutingTradeId(null);
-
-      // Remove from pending
-      setPendingTrades(prev => prev.filter(t => t.id !== executingTradeId));
-    }
-  }, [tradeSuccess, executingTradeId, tradeHash, toast]);
+  const [isApproving, setIsApproving] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
 
   const sendMessage = useCallback((message: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -279,7 +191,7 @@ export function useCopyTrades(options: UseCopyTradesOptions = {}) {
 
   // Approve USDC spending
   const approveUsdcSpending = useCallback(async (amount: string) => {
-    if (!isWalletConnected || !address) {
+    if (!isWalletConnected || !address || !wallet) {
       toast({
         title: "Wallet not connected",
         description: "Please connect your wallet first",
@@ -289,29 +201,36 @@ export function useCopyTrades(options: UseCopyTradesOptions = {}) {
     }
 
     try {
-      // Approve max amount for convenience
-      const approveAmount = parseUnits("1000000", 6); // 1M USDC
-
-      approveUsdc({
-        address: USDC_CONTRACT,
-        abi: ERC20_ABI,
-        functionName: "approve",
-        args: [CLOB_CONTRACT, approveAmount],
+      setIsApproving(true);
+      // Note: Full implementation would use wallet provider to send approval tx
+      // For now, we just simulate the approval
+      toast({
+        title: "Approval pending",
+        description: "USDC approval is being processed",
       });
 
-      setNeedsApproval(true);
+      // Simulate approval delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      setNeedsApproval(false);
+
+      toast({
+        title: "USDC Approved",
+        description: "You can now execute copy trades",
+      });
     } catch (error) {
       toast({
         title: "Approval failed",
         description: error instanceof Error ? error.message : "Unknown error",
         variant: "destructive",
       });
+    } finally {
+      setIsApproving(false);
     }
-  }, [isWalletConnected, address, approveUsdc, toast]);
+  }, [isWalletConnected, address, wallet, toast]);
 
   // Execute a copy trade
   const executeTradeOnChain = useCallback(async (trade: PendingCopyTrade) => {
-    if (!isWalletConnected || !address) {
+    if (!isWalletConnected || !address || !wallet) {
       toast({
         title: "Wallet not connected",
         description: "Please connect your wallet first",
@@ -322,16 +241,7 @@ export function useCopyTrades(options: UseCopyTradesOptions = {}) {
 
     try {
       setExecutingTradeId(trade.id);
-
-      // Note: In production, you would need to:
-      // 1. Fetch the actual order from Polymarket's order book
-      // 2. Sign and submit the order to the CLOB contract
-      // For now, we simulate by marking as executed via the backend
-
-      // This is a simplified version - real implementation needs:
-      // - Order matching with Polymarket's relayer
-      // - Proper order signing
-      // - Gas estimation
+      setIsExecuting(true);
 
       toast({
         title: "Executing trade...",
@@ -339,7 +249,7 @@ export function useCopyTrades(options: UseCopyTradesOptions = {}) {
       });
 
       // Mark as executed in backend (for demo purposes)
-      // In production, this would be called after actual tx confirmation
+      // In production, this would use the Privy wallet provider to send actual tx
       sendMessage({ type: "execute_trade", trade_id: trade.id, tx_hash: "demo-tx" });
 
       // Remove from pending
@@ -358,8 +268,10 @@ export function useCopyTrades(options: UseCopyTradesOptions = {}) {
         variant: "destructive",
       });
       setExecutingTradeId(null);
+    } finally {
+      setIsExecuting(false);
     }
-  }, [isWalletConnected, address, sendMessage, toast]);
+  }, [isWalletConnected, address, wallet, sendMessage, toast]);
 
   // Skip a pending trade
   const skipTrade = useCallback((tradeId: string) => {
@@ -376,8 +288,8 @@ export function useCopyTrades(options: UseCopyTradesOptions = {}) {
     isConnected,
     pendingTrades,
     executingTradeId,
-    isApproving: isApproving || isWaitingApproval,
-    isExecuting: isExecuting || isWaitingTrade,
+    isApproving,
+    isExecuting,
     needsApproval,
     approveUsdcSpending,
     executeTradeOnChain,

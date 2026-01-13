@@ -14,7 +14,7 @@ import {
   ExternalLink,
   Shield,
 } from "lucide-react";
-import { useAccount } from "wagmi";
+import { useSafePrivy } from "@/hooks/use-safe-privy";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -62,7 +62,7 @@ function StatCard({
 export default function TraderProfilePage() {
   const params = useParams();
   const address = params.address as string;
-  const { isConnected } = useAccount();
+  const { authenticated: isConnected } = useSafePrivy();
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
 
   const { data: trader, isLoading, error } = useQuery({

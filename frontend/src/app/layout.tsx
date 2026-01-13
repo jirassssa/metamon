@@ -1,17 +1,20 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import "./globals.css";
 import { Providers } from "./providers";
 import { Toaster } from "@/components/ui/toaster";
 import { ErrorBoundary } from "@/components/error-boundary";
 
-// Dynamic imports for components that use wagmi hooks (client-only)
-const Navbar = dynamic(
+// Force dynamic rendering to ensure environment variables are available
+export const dynamic = "force-dynamic";
+
+// Dynamic imports for components that use Privy hooks (client-only)
+const Navbar = nextDynamic(
   () => import("@/components/layout/Navbar").then((mod) => ({ default: mod.Navbar })),
   { ssr: false }
 );
-const PendingCopyTrades = dynamic(
+const PendingCopyTrades = nextDynamic(
   () => import("@/components/copy/PendingCopyTrades").then((mod) => ({ default: mod.PendingCopyTrades })),
   { ssr: false }
 );

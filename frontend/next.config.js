@@ -4,6 +4,14 @@ const webpack = require("webpack");
 const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
+  modularizeImports: {
+    "lucide-react": {
+      transform: "lucide-react/dist/esm/icons/{{kebabCase member}}",
+      skipDefaultConversion: true,
+      preventFullImport: false,
+    },
+  },
+  transpilePackages: ["@privy-io/react-auth", "lucide-react"],
   images: {
     remotePatterns: [
       {

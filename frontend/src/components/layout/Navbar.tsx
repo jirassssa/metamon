@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Menu, Moon, Sun, Wallet, LogIn, Loader2 } from "lucide-react";
+import { Menu, Moon, Sun, User, LogOut, Loader2, Mail, Wallet, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useConnect } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { useSafePrivy } from "@/hooks/use-safe-privy";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,44 +17,29 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn, formatAddress } from "@/lib/utils";
-import { useAuth } from "@/hooks/use-auth";
 
 const navItems = [
   { href: "/", label: "Home" },
-  { href: "/leaderboard", label: "Leaderboard" },
+  { href: "/leaderboard", label: "Polymarket" },
+  { href: "/kalshi", label: "Kalshi" },
   { href: "/portfolio", label: "Portfolio" },
 ];
 
 export function Navbar() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const { connect } = useConnect();
   const {
-    address,
-    isConnected,
-    isAuthenticated,
-    isSigningIn,
-    signIn,
-    signOut,
-  } = useAuth();
+    ready,
+    authenticated,
+    user,
+    login,
+    logout,
+  } = useSafePrivy();
 
-  const handleConnect = async () => {
-    connect({ connector: injected() });
-  };
-
-  // Auto sign-in after wallet connects
-  const hasTriedSignIn = useRef(false);
-  useEffect(() => {
-    // If wallet is connected but not authenticated, auto sign-in
-    if (isConnected && address && !isAuthenticated && !isSigningIn && !hasTriedSignIn.current) {
-      hasTriedSignIn.current = true;
-      signIn();
-    }
-    // Reset when disconnected
-    if (!isConnected) {
-      hasTriedSignIn.current = false;
-    }
-  }, [isConnected, address, isAuthenticated, isSigningIn, signIn]);
+  const userEmail = user?.email?.address;
+  const userTwitter = user?.twitter?.username;
+  const userWallet = user?.wallet?.address;
+  const displayName = userTwitter ? `@${userTwitter}` : userEmail || (userWallet ? formatAddress(userWallet) : "User");
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -121,52 +104,72 @@ export function Navbar() {
             <span className="sr-only">Toggle theme</span>
           </Button>
 
-          {/* Connect wallet / Account */}
-          {isConnected && address ? (
+          {/* User account */}
+          {!ready ? (
+            <Button variant="outline" disabled>
+              <Loader2 className="h-4 w-4 animate-spin" />
+            </Button>
+          ) : authenticated ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
                   className="gap-2"
-                  aria-label={`Wallet ${formatAddress(address)}${isAuthenticated ? ", signed in" : ", not signed in"}`}
                 >
-                  <Wallet className="h-4 w-4" aria-hidden="true" />
-                  {formatAddress(address)}
-                  {isAuthenticated && (
-                    <span
-                      className="w-2 h-2 rounded-full bg-green-500"
-                      aria-label="Signed in"
-                    />
-                  )}
+                  <User className="h-4 w-4" aria-hidden="true" />
+                  {displayName}
+                  <span
+                    className="w-2 h-2 rounded-full bg-green-500"
+                    aria-label="Signed in"
+                  />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {!isAuthenticated && (
-                  <>
-                    <DropdownMenuItem onClick={signIn} disabled={isSigningIn}>
-                      {isSigningIn ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <LogIn className="h-4 w-4 mr-2" />
-                      )}
-                      {isSigningIn ? "Signing in..." : "Sign In"}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5 text-sm">
+                  <p className="font-medium">{displayName}</p>
+                  {userEmail && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Mail className="h-3 w-3" />
+                      {userEmail}
+                    </p>
+                  )}
+                  {userWallet && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Wallet className="h-3 w-3" />
+                      {formatAddress(userWallet)}
+                    </p>
+                  )}
+                </div>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link href="/portfolio">My Portfolio</Link>
+                  <Link href="/portfolio" className="flex items-center gap-2">
+                    <Wallet className="h-4 w-4" />
+                    My Portfolio
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/portfolio?tab=deposit" className="flex items-center gap-2">
+                    <ArrowDownToLine className="h-4 w-4" />
+                    Deposit
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/portfolio?tab=withdraw" className="flex items-center gap-2">
+                    <ArrowUpFromLine className="h-4 w-4" />
+                    Withdraw
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={signOut}>
-                  Disconnect
+                <DropdownMenuItem onClick={logout} className="text-destructive">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button onClick={handleConnect} className="gap-2">
-              <Wallet className="h-4 w-4" />
-              Connect Wallet
+            <Button onClick={login} className="gap-2">
+              <User className="h-4 w-4" />
+              Sign In
             </Button>
           )}
 

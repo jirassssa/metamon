@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { useAccount, useSignMessage, useDisconnect } from "wagmi";
-import { SiweMessage } from "siwe";
+"use client";
+
+import { useCallback, useEffect } from "react";
+import { useSafePrivy, useSafeWallets } from "@/hooks/use-safe-privy";
 import { useAuthStore } from "@/stores/auth-store";
 import { api } from "@/lib/api";
 import { useToast } from "./use-toast";
-
-interface NonceResponse {
-  nonce: string;
-}
 
 interface AuthResponse {
   token: string;
@@ -20,63 +17,34 @@ interface AuthResponse {
 }
 
 export function useAuth() {
-  const { address, isConnected, chain } = useAccount();
-  const { signMessageAsync } = useSignMessage();
-  const { disconnect } = useDisconnect();
+  const { ready, authenticated, user, logout: privyLogout } = useSafePrivy();
+  const { wallets } = useSafeWallets();
   const { token, isAuthenticated, setAuth, clearAuth } = useAuthStore();
   const { toast } = useToast();
-  const [isSigningIn, setIsSigningIn] = useState(false);
 
-  // Auto sign-in when wallet connects
-  const signIn = useCallback(async () => {
-    if (!address || !chain) return;
+  // Get the first wallet address
+  const wallet = wallets[0];
+  const address = wallet?.address || user?.wallet?.address;
+  const isConnected = authenticated && !!address;
 
-    setIsSigningIn(true);
+  // Sync Privy auth with backend
+  const syncAuth = useCallback(async () => {
+    if (!authenticated || !address) return;
+
     try {
-      // Get nonce from backend
-      const { nonce } = await api.get<NonceResponse>("/api/auth/nonce");
-
-      // Create SIWE message with time bounds
-      const message = new SiweMessage({
-        domain: window.location.host,
-        address,
-        statement: "Sign in to MetamonMarket",
-        uri: window.location.origin,
-        version: "1",
-        chainId: chain.id,
-        nonce,
-        issuedAt: new Date().toISOString(),
+      // Try to authenticate with backend using Privy user info
+      const authResponse = await api.post<AuthResponse>("/api/auth/privy", {
+        wallet_address: address,
+        privy_user_id: user?.id,
+        email: user?.email?.address,
       });
 
-      const messageStr = message.prepareMessage();
-
-      // Sign message
-      const signature = await signMessageAsync({ message: messageStr });
-
-      // Verify with backend
-      const authResponse = await api.post<AuthResponse>(
-        "/api/auth/verify",
-        { message: messageStr, signature }
-      );
-
-      // Store auth state
       setAuth(authResponse.token, address);
-
-      toast({
-        title: "Signed in successfully",
-        description: "You can now copy traders and manage your portfolio.",
-      });
-    } catch (error) {
-      // Error is shown to user via toast - no console logging in production
-      toast({
-        title: "Sign in failed",
-        description: error instanceof Error ? error.message : "Please try again",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSigningIn(false);
+    } catch {
+      // If backend auth fails, still allow user to use app with Privy auth
+      // Just won't have backend token for protected routes
     }
-  }, [address, chain, signMessageAsync, setAuth, toast]);
+  }, [authenticated, address, user, setAuth]);
 
   // Sign out
   const signOut = useCallback(async () => {
@@ -88,20 +56,27 @@ export function useAuth() {
       // Ignore logout errors
     } finally {
       clearAuth();
-      disconnect();
+      privyLogout();
       toast({
         title: "Signed out",
         description: "You have been signed out successfully.",
       });
     }
-  }, [token, clearAuth, disconnect, toast]);
+  }, [token, clearAuth, privyLogout, toast]);
 
-  // Clear auth when wallet disconnects
+  // Clear auth when Privy disconnects
   useEffect(() => {
-    if (!isConnected && isAuthenticated) {
+    if (ready && !authenticated && isAuthenticated) {
       clearAuth();
     }
-  }, [isConnected, isAuthenticated, clearAuth]);
+  }, [ready, authenticated, isAuthenticated, clearAuth]);
+
+  // Sync auth when Privy authenticates
+  useEffect(() => {
+    if (authenticated && address && !isAuthenticated) {
+      syncAuth();
+    }
+  }, [authenticated, address, isAuthenticated, syncAuth]);
 
   // Validate token on mount
   useEffect(() => {
@@ -122,10 +97,10 @@ export function useAuth() {
   return {
     address,
     isConnected,
-    isAuthenticated,
-    isSigningIn,
+    isAuthenticated: authenticated,
+    isSigningIn: !ready,
     token,
-    signIn,
+    signIn: syncAuth, // With Privy, signIn is automatic
     signOut,
   };
 }

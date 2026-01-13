@@ -25,8 +25,7 @@ export function useSafePrivy() {
         ready: true,
         authenticated: false,
         login: () => {
-          console.warn("Privy is not configured. Please add your domain to Privy dashboard.");
-          window.open("https://dashboard.privy.io", "_blank");
+          alert("Sign in is temporarily unavailable. Please try again later.");
         },
       } as ReturnType<typeof usePrivy>;
     }
